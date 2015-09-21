@@ -113,11 +113,6 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 	self.overlayViewsHidingDelay = RTSMediaPlayerOverlayHidingDelay;
 	self.periodicTimeObservers = [NSMutableDictionary dictionary];
 	
-	[[NSNotificationCenter defaultCenter] addObserver:self
-											 selector:@selector(applicationWillResignActive:)
-												 name:UIApplicationWillResignActiveNotification
-											   object:nil];
-	
 	[self.stateMachine activate];
 	
 	return self;
@@ -965,16 +960,6 @@ static void LogProperties(id object)
 	int64_t delayInNanoseconds = ((self.overlayViewsHidingDelay > 0.0) ? self.overlayViewsHidingDelay : RTSMediaPlayerOverlayHidingDelay) * NSEC_PER_SEC;
 	int64_t toleranceInNanoseconds = 0.1 * NSEC_PER_SEC;
 	dispatch_source_set_timer(self.idleTimer, dispatch_time(DISPATCH_TIME_NOW, delayInNanoseconds), DISPATCH_TIME_FOREVER, toleranceInNanoseconds);
-}
-
-#pragma mark - Notifications
-
-- (void)applicationWillResignActive:(NSNotification *)notification
-{
-	if ([self mediaType] == RTSMediaTypeVideo) {
-		[self.player pause];
-		[self fireEvent:self.pauseEvent userInfo:nil];
-	}
 }
 
 @end
