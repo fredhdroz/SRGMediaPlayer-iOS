@@ -266,25 +266,6 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 		}
 	}];
 	
-	[playing setWillEnterStateBlock:^(TKState *state, TKTransition *transition) {
-		@strongify(self)
-		
-		// See https://developer.apple.com/library/ios/qa/qa1668/_index.html
-		RTSMediaType mediaType = [self mediaType];
-		if (mediaType == RTSMediaTypeVideo) {
-			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
-			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeMoviePlayback error:nil];
-		}
-		else if (mediaType == RTSMediaTypeAudio) {
-			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
-			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
-		}
-		else {
-			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
-			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
-		}
-	}];
-	
 	[playing setDidEnterStateBlock:^(TKState *state, TKTransition *transition) {
 		@strongify(self)
 		[self resetIdleTimer];
@@ -306,8 +287,6 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 	
 	[reset setDidFireEventBlock:^(TKEvent *event, TKTransition *transition) {
 		@strongify(self)
-		[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
-		[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
 		self.previousPlaybackTime = kCMTimeInvalid;
 		self.playerView.player = nil;
 		self.player = nil;
