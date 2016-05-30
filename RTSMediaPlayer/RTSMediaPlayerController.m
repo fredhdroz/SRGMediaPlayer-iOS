@@ -133,11 +133,6 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 	self.overlayViewsHidingDelay = RTSMediaPlayerOverlayHidingDelay;
 	self.periodicTimeObservers = [NSMutableDictionary dictionary];
 	
-	[[NSNotificationCenter defaultCenter] addObserver:self
-											 selector:@selector(applicationWillResignActive:)
-												 name:UIApplicationWillResignActiveNotification
-											   object:nil];
-	
 	[self.stateMachine activate];
 
 	self.liveTolerance = RTSMediaLiveDefaultTolerance;
@@ -307,27 +302,6 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 			// to be sent when the player is really ready to play
 			self.pauseScheduled = YES;
 		}
-	}];
-	
-	[playing setWillEnterStateBlock:^(TKState *state, TKTransition *transition) {
-		@strongify(self)
-		
-		// See https://developer.apple.com/library/ios/qa/qa1668/_index.html
-		RTSMediaType mediaType = [self mediaType];
-		if (mediaType == RTSMediaTypeVideo) {
-			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
-			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeMoviePlayback error:nil];
-		}
-		else if (mediaType == RTSMediaTypeAudio) {
-			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
-			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
-		}
-// As a general rule, do NOT reset the audio session, but rather change to your needs at the point you need it (as above).
-// See also -dealloc method on why the lines below must remain commented.
-//		else {
-//			[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
-//			[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
-//		}
 	}];
 	
 	[playing setDidEnterStateBlock:^(TKState *state, TKTransition *transition) {
@@ -1184,16 +1158,6 @@ static void LogProperties(id object)
 		_overlayViewsHidingDelay = flag;
 		[self didChangeValueForKey:@"overlayViewsHidingDelay"];
 		[self resetIdleTimer];
-	}
-}
-
-#pragma mark - Notifications
-
-- (void)applicationWillResignActive:(NSNotification *)notification
-{
-	if ([self mediaType] == RTSMediaTypeVideo && !self.pictureInPictureController.isPictureInPictureActive) {
-        [self.player pause];
-        [self fireEvent:self.pauseEvent userInfo:nil];
 	}
 }
 

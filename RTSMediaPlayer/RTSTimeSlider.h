@@ -59,6 +59,11 @@ typedef NS_ENUM(NSInteger, RTSTimeSliderLiveKnobPosition) {
 @property (nonatomic, weak) IBOutlet UILabel *valueLabel;
 
 /**
+ *  Label displaying the total duration of the stream. Will show `Live` text when `live` property is true.
+ */
+@property (nonatomic, weak) IBOutlet UILabel *totalTimeValueLabel;
+
+/**
  *  Bar border color (defaults to black)
  */
 @property (nonatomic, strong) IBInspectable UIColor *borderColor;

@@ -53,6 +53,13 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 	self = [super initWithFrame:frame];
 	if (self) {
 		[self setup_RTSTimeSlider];
+        
+        self.borderColor = [UIColor blackColor];
+        
+        self.minimumTrackTintColor = [UIColor whiteColor];
+        self.maximumTrackTintColor = [UIColor blackColor];
+        
+        self.thumbTintColor = [UIColor whiteColor];
 	}
 	return self;
 }
@@ -68,25 +75,15 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 
 - (void) setup_RTSTimeSlider
 {
-	self.borderColor = [UIColor blackColor];
-	
 	self.minimumValue = 0.;			// Always 0
 	self.maximumValue = 0.;
 	self.value = 0.;
-	
-	self.minimumTrackTintColor = [UIColor whiteColor];
-	self.maximumTrackTintColor = [UIColor blackColor];
-	
-	self.thumbTintColor = [UIColor whiteColor];
 	
 	UIImage *triangle = [self emptyImage];
 	UIImage *image = [triangle resizableImageWithCapInsets:UIEdgeInsetsMake(1, 1, 1, 1)];
 	
 	[self setMinimumTrackImage:image forState:UIControlStateNormal];
 	[self setMaximumTrackImage:image forState:UIControlStateNormal];
-	
-	[self setThumbImage:[self thumbImage] forState:UIControlStateNormal];
-	[self setThumbImage:[self thumbImage] forState:UIControlStateHighlighted];
 	
 	self.seekingDuringTracking = YES;
 	self.knobLivePosition = RTSTimeSliderLiveKnobPositionLeft;
@@ -116,6 +113,9 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 - (void) setThumbTintColor:(UIColor *)thumbTintColor
 {
 	self.overriddenThumbTintColor = thumbTintColor;
+    
+    [self setThumbImage:[self thumbImage] forState:UIControlStateNormal];
+    [self setThumbImage:[self thumbImage] forState:UIControlStateHighlighted];
 }
 
 - (UIColor *) minimumTrackTintColor
@@ -169,6 +169,7 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 	if (! playerItem || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateIdle || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateEnded
 			|| playerItem.status != AVPlayerItemStatusReadyToPlay) {
 		self.valueLabel.text = @"--:--";
+        self.totalTimeValueLabel.text = @"--:--"
 		self.timeLeftValueLabel.text = @"--:--";
 		return;
 	}
@@ -177,9 +178,11 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 	{
 		self.valueLabel.text = @"--:--";
 		self.timeLeftValueLabel.text = RTSMediaPlayerLocalizedString(@"Live", nil);
+        self.totalTimeValueLabel.text = RTSMediaPlayerLocalizedString(@"Live", nil);
 	}
 	else {
 		self.valueLabel.text = RTSTimeSliderFormatter(self.value);
+        self.totalTimeValueLabel.text = RTSTimeSliderFormatter(self.maximumValue);
 		self.timeLeftValueLabel.text = RTSTimeSliderFormatter(self.value - self.maximumValue);
 	}
 }
