@@ -169,7 +169,7 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 	if (! playerItem || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateIdle || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateEnded
 			|| playerItem.status != AVPlayerItemStatusReadyToPlay) {
 		self.valueLabel.text = @"--:--";
-        self.totalTimeValueLabel.text = @"--:--"
+        self.totalTimeValueLabel.text = @"--:--";
 		self.timeLeftValueLabel.text = @"--:--";
 		return;
 	}
