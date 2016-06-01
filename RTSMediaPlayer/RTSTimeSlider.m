@@ -364,66 +364,82 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
     return (self.knobLivePosition == RTSTimeSliderLiveKnobPositionLeft) ? 0. : 1.;
 }
 
-- (void)willMoveToWindow:(UIWindow *)window
+- (void) willMoveToWindow:(UIWindow *)window
 {
-	[super willMoveToWindow:window];
-	
-	if (window) {
-		@weakify(self)
-		self.periodicTimeObserver = [self.mediaPlayerController addPeriodicTimeObserverForInterval:CMTimeMake(1., 5.) queue:NULL usingBlock:^(CMTime time) {
-			@strongify(self)
-			
-			if (!self.isTracking && self.mediaPlayerController.playbackState != RTSMediaPlaybackStateSeeking)
-			{
-				CMTimeRange timeRange = [self.mediaPlayerController timeRange];
-                if (self.mediaPlayerController.streamType == RTSMediaStreamTypeOnDemand
-                        && (self.mediaPlayerController.playbackState == RTSMediaPlaybackStateIdle || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateEnded)) {
-                    self.maximumValue = 0.f;
-                    self.value = 0.f;
-                    self.userInteractionEnabled = YES;
-                }
-                else if(!CMTIMERANGE_IS_EMPTY(timeRange) && !CMTIMERANGE_IS_INDEFINITE(timeRange) && !CMTIMERANGE_IS_INVALID(timeRange))
-				{
-					self.maximumValue = CMTimeGetSeconds(timeRange.duration);
-					
-					AVPlayerItem *playerItem = self.mediaPlayerController.playerItem;
-					self.value = CMTimeGetSeconds(CMTimeSubtract(playerItem.currentTime, timeRange.start));
-					self.userInteractionEnabled = YES;
-				}
-				else
-				{
-                    float value = [self resetValue];
-                    self.maximumValue = value;
-					self.value = value;
-					self.userInteractionEnabled = NO;
-				}
-				
-				RTSMediaPlayerLogTrace(@"Range min = %@ (value = %@) --- Current = %@ (value = %@) --- Range max = %@ (value = %@)",
-									   @(CMTimeGetSeconds(timeRange.start)), @(self.minimumValue),
-									   @(CMTimeGetSeconds(self.mediaPlayerController.playerItem.currentTime)), @(self.value),
-									   @(CMTimeGetSeconds(CMTimeRangeGetEnd(timeRange))), @(self.maximumValue));
-				
-				[self.slidingDelegate timeSlider:self
-						  isMovingToPlaybackTime:self.time
-									   withValue:self.value
-									 interactive:NO];
-				
-				[self setNeedsDisplay];
-				[self updateTimeRangeLabels];
-			}
-		}];
-		
-		[[NSNotificationCenter defaultCenter] addObserver:self
-												 selector:@selector(timesliderPlaybackStateDidChange:)
-													 name:RTSMediaPlayerPlaybackStateDidChangeNotification
-												   object:self.mediaPlayerController];
-	}
-	else {
-		[self.mediaPlayerController removePeriodicTimeObserver:self.periodicTimeObserver];
-		[[NSNotificationCenter defaultCenter] removeObserver:self
-														name:RTSMediaPlayerPlaybackStateDidChangeNotification
-													  object:self.mediaPlayerController];
-	}
+    [super willMoveToWindow:window];
+    
+    if (window) {
+        [self setupPeriodicTimeObserver];
+    }
+}
+
+- (void) setMediaPlayerController:(RTSMediaPlayerController *)mediaPlayerController
+{
+    _mediaPlayerController = mediaPlayerController;
+    
+    [self setupPeriodicTimeObserver];
+}
+
+- (void) setupPeriodicTimeObserver
+{
+    if (!self.mediaPlayerController) {
+        return;
+    }
+    
+    if (self.periodicTimeObserver) {
+        [self.mediaPlayerController removePeriodicTimeObserver:self.periodicTimeObserver];
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:RTSMediaPlayerPlaybackStateDidChangeNotification object:self.mediaPlayerController];
+    }
+    
+    @weakify(self)
+    self.periodicTimeObserver = [self.mediaPlayerController addPeriodicTimeObserverForInterval:CMTimeMake(1., 5.) queue:NULL usingBlock:^(CMTime time) {
+        @strongify(self)
+        
+        if (!self.isTracking && self.mediaPlayerController.playbackState != RTSMediaPlaybackStateSeeking)
+        {
+            CMTimeRange timeRange = [self.mediaPlayerController timeRange];
+            if (self.mediaPlayerController.streamType == RTSMediaStreamTypeOnDemand
+                && (self.mediaPlayerController.playbackState == RTSMediaPlaybackStateIdle || self.mediaPlayerController.playbackState == RTSMediaPlaybackStateEnded)) {
+                self.maximumValue = 0.f;
+                self.value = 0.f;
+                self.userInteractionEnabled = YES;
+            }
+            else if(!CMTIMERANGE_IS_EMPTY(timeRange) && !CMTIMERANGE_IS_INDEFINITE(timeRange) && !CMTIMERANGE_IS_INVALID(timeRange))
+            {
+                self.maximumValue = CMTimeGetSeconds(timeRange.duration);
+                
+                AVPlayerItem *playerItem = self.mediaPlayerController.playerItem;
+                self.value = CMTimeGetSeconds(CMTimeSubtract(playerItem.currentTime, timeRange.start));
+                self.userInteractionEnabled = YES;
+            }
+            else
+            {
+                float value = [self resetValue];
+                self.maximumValue = value;
+                self.value = value;
+                self.userInteractionEnabled = NO;
+            }
+            
+            RTSMediaPlayerLogTrace(@"Range min = %@ (value = %@) --- Current = %@ (value = %@) --- Range max = %@ (value = %@)",
+                                   @(CMTimeGetSeconds(timeRange.start)), @(self.minimumValue),
+                                   @(CMTimeGetSeconds(self.mediaPlayerController.playerItem.currentTime)), @(self.value),
+                                   @(CMTimeGetSeconds(CMTimeRangeGetEnd(timeRange))), @(self.maximumValue));
+            
+            [self.slidingDelegate timeSlider:self
+                      isMovingToPlaybackTime:self.time
+                                   withValue:self.value
+                                 interactive:NO];
+            
+            [self setNeedsDisplay];
+            [self updateTimeRangeLabels];
+        }
+    }];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(timesliderPlaybackStateDidChange:)
+                                                 name:RTSMediaPlayerPlaybackStateDidChangeNotification
+                                               object:self.mediaPlayerController];
+    
 }
 
 #pragma mark Notifications
