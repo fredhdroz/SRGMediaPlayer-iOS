@@ -16,7 +16,7 @@
 #import "RTSMediaPlayerView.h"
 #import "RTSPeriodicTimeObserver.h"
 #import "RTSActivityGestureRecognizer.h"
-#import "RTSMediaPlayerLogger.h"
+#import "RTSMediaPlayerLogger+Private.h"
 
 static const void * const RTSMediaPlayerPictureInPicturePossibleContext = &RTSMediaPlayerPictureInPicturePossibleContext;
 static const void * const RTSMediaPlayerPictureInPictureActiveContext = &RTSMediaPlayerPictureInPictureActiveContext;
@@ -146,12 +146,6 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 		
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[[NSNotificationCenter defaultCenter] removeObserver:self.stateTransitionObserver];
-	
-// Leave the two lines with AVAudioSession below COMMENTED.
-// This "reset" behavior is good in theory. But it breaks use cases with multiple players sharing the same audio session.
-// As a general rule, do NOT reset the audio session, but rather change to your needs at the point you need it.
-//	[[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
-//	[[AVAudioSession sharedInstance] setMode:AVAudioSessionModeDefault error:nil];
 	
 	[_view removeFromSuperview];
 	[_activityView removeGestureRecognizer:_activityGestureRecognizer];
@@ -841,9 +835,9 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
                 if (self.playScheduled) {
                     self.playScheduled = NO;
                     [self fireEvent:self.playEvent userInfo:nil];
+					[self play];
                 }
-                
-				if (![self.stateMachine.currentState isEqual:self.playingState] && self.startTimeValue) {
+				else if (![self.stateMachine.currentState isEqual:self.playingState] && self.startTimeValue) {
 					if (CMTIME_COMPARE_INLINE([self.startTimeValue CMTimeValue], ==, kCMTimeZero) || CMTIME_IS_INVALID([self.startTimeValue CMTimeValue])) {
 						[self play];
 					}
