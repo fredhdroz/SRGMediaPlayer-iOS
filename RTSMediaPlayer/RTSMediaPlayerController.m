@@ -18,6 +18,8 @@
 #import "RTSActivityGestureRecognizer.h"
 #import "RTSMediaPlayerLogger+Private.h"
 
+#import "NSBundle+RTSMediaPlayer.h"
+
 static const void * const RTSMediaPlayerPictureInPicturePossibleContext = &RTSMediaPlayerPictureInPicturePossibleContext;
 static const void * const RTSMediaPlayerPictureInPictureActiveContext = &RTSMediaPlayerPictureInPictureActiveContext;
 
@@ -107,6 +109,8 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 @synthesize idleTimer = _idleTimer;
 @synthesize identifier = _identifier;
 @synthesize muted = _muted;
+@synthesize allowsExternalPlayback = _allowsExternalPlayback;
+@synthesize usesExternalPlaybackWhileExternalScreenIsActive = _usesExternalPlaybackWhileExternalScreenIsActive;
 
 #pragma mark - Initialization
 
@@ -129,6 +133,8 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 	_identifier = identifier;
 	_dataSource = dataSource;
 	_overlaysVisible = YES;		// The player always open with visible overlays
+	_allowsExternalPlayback = YES;
+	_usesExternalPlaybackWhileExternalScreenIsActive = NO;
 	
 	self.overlayViewsHidingDelay = RTSMediaPlayerOverlayHidingDelay;
 	self.periodicTimeObservers = [NSMutableDictionary dictionary];
@@ -175,12 +181,18 @@ NSString * const RTSMediaPlayerPlaybackSeekingUponBlockingReasonInfoKey = @"Bloc
 
 #pragma mark - Loading
 
-static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
+static NSDictionary *ErrorUserInfo(RTSMediaPlayerError code, NSString *localizedDescription, NSError *underlyingError)
 {
-	NSDictionary *userInfo = @{ NSLocalizedFailureReasonErrorKey: failureReason ?: @"Unknown failure reason.",
-								NSLocalizedDescriptionKey: @"An unknown error occured." };
-	NSError *unknownError = [NSError errorWithDomain:RTSMediaPlayerErrorDomain code:RTSMediaPlayerErrorUnknown userInfo:userInfo];
-	return @{ RTSMediaPlayerPlaybackDidFailErrorUserInfoKey: error ?: unknownError };
+	NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+	userInfo[NSLocalizedDescriptionKey] = localizedDescription ?: RTSMediaPlayerLocalizedString(@"An unknown error occurred", nil);
+	userInfo[NSUnderlyingErrorKey] = underlyingError ?: [NSError errorWithDomain:RTSMediaPlayerErrorDomain
+																			code:RTSMediaPlayerErrorUnknown
+																		userInfo:@{ NSLocalizedDescriptionKey : RTSMediaPlayerLocalizedString(@"An unknown error occurred", nil) }];
+	
+	NSError *returnedError = [NSError errorWithDomain:RTSMediaPlayerErrorDomain
+												 code:code
+											 userInfo:userInfo];
+	return @{ RTSMediaPlayerPlaybackDidFailErrorUserInfoKey : returnedError };
 }
 
 - (TKStateMachine *)stateMachine
@@ -263,9 +275,11 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
             else if (contentURL) {
 				[self fireEvent:self.loadSuccessEvent userInfo:@{ RTSMediaPlayerStateMachineContentURLInfoKey : contentURL }];
 			}
-			else {
-				[self fireEvent:self.resetEvent
-					   userInfo:ErrorUserInfo(error, @"The RTSMediaPlayerControllerDataSource implementation returned a nil contentURL and a nil error.")];
+            else {
+                NSError *dataSourceError = error ?: [NSError errorWithDomain:RTSMediaPlayerErrorDomain
+                                                                        code:RTSMediaPlayerErrorDataSource
+                                                                    userInfo:@{ NSLocalizedDescriptionKey : RTSMediaPlayerLocalizedString(@"Media not available", nil) }];
+                [self fireEvent:self.resetEvent userInfo:@{ RTSMediaPlayerPlaybackDidFailErrorUserInfoKey : dataSourceError }];
 			}
 		}];
 	}];
@@ -279,10 +293,9 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 		// The player observes its "currentItem.status" keyPath, see callback in `observeValueForKeyPath:ofObject:change:context:`
 		self.player = [AVPlayer playerWithURL:contentURL];
 		self.player.muted = _muted;
-		
+		self.player.allowsExternalPlayback = _allowsExternalPlayback;
+		self.player.usesExternalPlaybackWhileExternalScreenIsActive = _usesExternalPlaybackWhileExternalScreenIsActive;
 		self.player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-		self.player.allowsExternalPlayback = YES;
-		self.player.usesExternalPlaybackWhileExternalScreenIsActive = YES;
 		
 		self.playerView.player = self.player;
 	}];
@@ -387,6 +400,8 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 
 - (void)play
 {
+	self.playScheduled = NO;
+	
 	if(!self.identifier) {
 		return;
 	}
@@ -453,16 +468,38 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 	return _muted;
 }
 
+- (void)setAllowsExternalPlayback:(BOOL)allowsExternalPlayback
+{
+	_allowsExternalPlayback = allowsExternalPlayback;
+	self.player.allowsExternalPlayback = allowsExternalPlayback;
+}
+
+- (BOOL)allowsExternalPlayback
+{
+	return _allowsExternalPlayback;
+}
+
+- (void)setUsesExternalPlaybackWhileExternalScreenIsActive:(BOOL)usesExternalPlaybackWhileExternalScreenIsActive
+{
+	_usesExternalPlaybackWhileExternalScreenIsActive = usesExternalPlaybackWhileExternalScreenIsActive;
+	self.player.usesExternalPlaybackWhileExternalScreenIsActive = usesExternalPlaybackWhileExternalScreenIsActive;
+}
+
+- (BOOL)usesExternalPlaybackWhileExternalScreenIsActive
+{
+	return _usesExternalPlaybackWhileExternalScreenIsActive;
+}
+
 - (void)reset
 {
-    // Reset the PIP controller so that it gets lazily attached again. This forces a new player layer relationship,
-    // preventing black screen issues when playing another media identifier while already in picture in picture mode
-    if (_pictureInPictureController) {
-        [_pictureInPictureController removeObserver:self forKeyPath:@"pictureInPicturePossible" context:(void *)RTSMediaPlayerPictureInPicturePossibleContext];
-        [_pictureInPictureController removeObserver:self forKeyPath:@"pictureInPictureActive" context:(void *)RTSMediaPlayerPictureInPictureActiveContext];
-        _pictureInPictureController = nil;
-    }
-    
+	// Reset the PIP controller so that it gets lazily attached again. This forces a new player layer relationship,
+	// preventing black screen issues when playing another media identifier while already in picture in picture mode
+	if (_pictureInPictureController) {
+		[_pictureInPictureController removeObserver:self forKeyPath:@"pictureInPicturePossible" context:(void *)RTSMediaPlayerPictureInPicturePossibleContext];
+		[_pictureInPictureController removeObserver:self forKeyPath:@"pictureInPictureActive" context:(void *)RTSMediaPlayerPictureInPictureActiveContext];
+		_pictureInPictureController = nil;
+	}
+	
 	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(prepareToPlay) object:nil];
 	if (![self.stateMachine.currentState isEqual:self.idleState]) {
 		[self fireEvent:self.resetEvent userInfo:nil];
@@ -475,16 +512,21 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 		return;
 	}
 	
+	// Avoid exception: "AVPlayerItem cannot service a seek request with a completion handler until its status is AVPlayerItemStatusReadyToPlay"
+	if (!self.player || self.player.status != AVPlayerItemStatusReadyToPlay) {
+		return;
+	}
+	
 	if (self.stateMachine.currentState != self.seekingState) {
 		[self fireEvent:self.seekEvent userInfo:nil];
 	}
 	
 	RTSMediaPlayerLogDebug(@"Seeking to %.2f sec.", CMTimeGetSeconds(time));
 	
-    [self.player seekToTime:time
-            toleranceBefore:kCMTimeZero
-             toleranceAfter:kCMTimeZero
-          completionHandler:completionHandler];
+	[self.player seekToTime:time
+			toleranceBefore:kCMTimeZero
+			 toleranceAfter:kCMTimeZero
+		  completionHandler:completionHandler];
 }
 
 - (void)playAtTime:(CMTime)time
@@ -553,14 +595,14 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 	}
 	
 	CMTimeRange timeRange = CMTimeRangeFromTimeToTime(firstSeekableTimeRange.start, CMTimeRangeGetEnd(lastSeekableTimeRange));
-    
-    // DVR window size too small. Check that we the stream is not an on-demand one first, of course
+	
+	// DVR window size too small. Check that we the stream is not an on-demand one first, of course
 	if (CMTIME_IS_INDEFINITE(self.playerItem.duration) && CMTimeGetSeconds(timeRange.duration) < self.minimumDVRWindowLength) {
-        return CMTimeRangeMake(timeRange.start, kCMTimeZero);
-    }
-    else {
-        return timeRange;
-    }
+		return CMTimeRangeMake(timeRange.start, kCMTimeZero);
+	}
+	else {
+		return timeRange;
+	}
 }
 
 - (RTSMediaType)mediaType
@@ -580,8 +622,8 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 
 - (RTSMediaStreamType)streamType
 {
-    CMTimeRange timeRange = self.timeRange;
-    
+	CMTimeRange timeRange = self.timeRange;
+	
 	if (CMTIMERANGE_IS_INVALID(timeRange)) {
 		return RTSMediaStreamTypeUnknown;
 	}
@@ -598,13 +640,13 @@ static NSDictionary * ErrorUserInfo(NSError *error, NSString *failureReason)
 
 - (void)setMinimumDVRWindowLength:(NSTimeInterval)minimumDVRWindowLength
 {
-    if (minimumDVRWindowLength < 0.) {
-        RTSMediaPlayerLogWarning(@"The minimum DVR window length cannot be negative. Set to 0");
-        _minimumDVRWindowLength = 0.;
-    }
-    else {
-        _minimumDVRWindowLength = minimumDVRWindowLength;
-    }
+	if (minimumDVRWindowLength < 0.) {
+		RTSMediaPlayerLogWarning(@"The minimum DVR window length cannot be negative. Set to 0");
+		_minimumDVRWindowLength = 0.;
+	}
+	else {
+		_minimumDVRWindowLength = minimumDVRWindowLength;
+	}
 }
 
 - (void)setLiveTolerance:(NSTimeInterval)liveTolerance
@@ -668,7 +710,7 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 		[_player removeObserver:self forKeyPath:@"rate" context:(void *)AVPlayerRateContext];
 		[_player removeObserver:self forKeyPath:@"currentItem.playbackLikelyToKeepUp" context:(void *)AVPlayerItemPlaybackLikelyToKeepUpContext];
 		[_player removeObserver:self forKeyPath:@"currentItem.loadedTimeRanges" context:(void *)AVPlayerItemLoadedTimeRangesContext];
-        [_player removeObserver:self forKeyPath:@"currentItem.playbackBufferEmpty" context:(void *)AVPlayerItemBufferEmptyContext];
+		[_player removeObserver:self forKeyPath:@"currentItem.playbackBufferEmpty" context:(void *)AVPlayerItemBufferEmptyContext];
 		
 		[defaultCenter removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:_player.currentItem];
 		[defaultCenter removeObserver:self name:AVPlayerItemFailedToPlayToEndTimeNotification object:_player.currentItem];
@@ -697,7 +739,7 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 			[player addObserver:self forKeyPath:@"rate" options:NSKeyValueObservingOptionNew|NSKeyValueObservingOptionOld context:(void *)AVPlayerRateContext];
 			[player addObserver:self forKeyPath:@"currentItem.playbackLikelyToKeepUp" options:0 context:(void *)AVPlayerItemPlaybackLikelyToKeepUpContext];
 			[player addObserver:self forKeyPath:@"currentItem.loadedTimeRanges" options:NSKeyValueObservingOptionNew context:(void *)AVPlayerItemLoadedTimeRangesContext];
-            [player addObserver:self forKeyPath:@"currentItem.playbackBufferEmpty" options:NSKeyValueObservingOptionNew context:(void *)AVPlayerItemBufferEmptyContext];
+			[player addObserver:self forKeyPath:@"currentItem.playbackBufferEmpty" options:NSKeyValueObservingOptionNew context:(void *)AVPlayerItemBufferEmptyContext];
 			
 			[defaultCenter addObserver:self selector:@selector(playerItemDidPlayToEndTime:) name:AVPlayerItemDidPlayToEndTimeNotification object:playerItem];
 			[defaultCenter addObserver:self selector:@selector(playerItemFailedToPlayToEndTime:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:playerItem];
@@ -727,9 +769,14 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 	@weakify(self)
 	self.playbackStartObserver = [self.player addBoundaryTimeObserverForTimes:@[[NSValue valueWithCMTime:resultTime]] queue:NULL usingBlock:^{
 		@strongify(self)
-		if (![self.stateMachine.currentState isEqual:self.playingState] && ![self.stateMachine.currentState isEqual:self.endedState]) {
-			[self fireEvent:self.playEvent userInfo:nil];
-		}
+		
+		// Track information is not immediately available in some cases. Wait just a little before actually sending the playing event
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+			if (![self.stateMachine.currentState isEqual:self.playingState] && ![self.stateMachine.currentState isEqual:self.endedState]) {
+				[self fireEvent:self.playEvent userInfo:nil];
+			}
+		});
+		
 		[self.player removeTimeObserver:self.playbackStartObserver];
 		self.playbackStartObserver = nil;
 	}];
@@ -827,16 +874,18 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
 {
+	BOOL playScheduled = self.playScheduled;
+	self.playScheduled = NO;
+	
 	if (context == AVPlayerItemStatusContext) {
 		AVPlayer *player = object;
 		AVPlayerItem *playerItem = player.currentItem;
 		switch (playerItem.status) {
-			case AVPlayerItemStatusReadyToPlay:
-                if (self.playScheduled) {
-                    self.playScheduled = NO;
-                    [self fireEvent:self.playEvent userInfo:nil];
+			case AVPlayerItemStatusReadyToPlay: {
+				if (playScheduled) {
+					[self fireEvent:self.playEvent userInfo:nil];
 					[self play];
-                }
+				}
 				else if (![self.stateMachine.currentState isEqual:self.playingState] && self.startTimeValue) {
 					if (CMTIME_COMPARE_INLINE([self.startTimeValue CMTimeValue], ==, kCMTimeZero) || CMTIME_IS_INVALID([self.startTimeValue CMTimeValue])) {
 						[self play];
@@ -844,8 +893,8 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 					else {
 						// Not using [self seek...] to avoid triggering undesirable state events.
 						[self.player seekToTime:[self.startTimeValue CMTimeValue]
-                                toleranceBefore:kCMTimeZero
-                                 toleranceAfter:kCMTimeZero
+								toleranceBefore:kCMTimeZero
+								 toleranceAfter:kCMTimeZero
 							  completionHandler:^(BOOL finished) {
 								  if (finished) {
 									  [self play];
@@ -853,20 +902,34 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 							  }];
 					}
 				}
-                else if ([self.stateMachine.currentState isEqual:self.seekingState]) {
-                    [self.player play];
-                }
+				else if ([self.stateMachine.currentState isEqual:self.seekingState]) {
+					[self play];
+				}
 				break;
-			case AVPlayerItemStatusFailed:
-				[self fireEvent:self.resetEvent userInfo:ErrorUserInfo(playerItem.error, @"The AVPlayerItem did report a failed status without an error.")];
+			}
+				
+			case AVPlayerItemStatusFailed: {
+				NSDictionary *userInfo = ErrorUserInfo(RTSMediaPlayerErrorPlayback,
+													   RTSMediaPlayerLocalizedString(@"The media cannot be played", nil),
+													   playerItem.error);
+				[self fireEvent:self.resetEvent userInfo:userInfo];
 				break;
-			case AVPlayerItemStatusUnknown:
+			}
+				
+			case AVPlayerItemStatusUnknown: {
 				break;
+			}
 		}
-        self.startTimeValue = nil;
+		self.startTimeValue = nil;
 	}
 	else if (context == AVPlayerItemLoadedTimeRangesContext) {
-		NSArray *timeRanges = (NSArray *)[change objectForKey:NSKeyValueChangeNewKey];
+		// Might happen that we get NSNull
+		id newValue = [change objectForKey:NSKeyValueChangeNewKey];
+		if (![newValue isKindOfClass:[NSArray class]]) {
+			return;
+		}
+		
+		NSArray *timeRanges = newValue;
 		if (timeRanges.count == 0) {
 			return;
 		}
@@ -912,7 +975,7 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 		else if (newRate == 1 && oldRate == 0 && self.stateMachine.currentState != self.playingState) {
 			// Ugly trick. We do not want to emit play events before the player is ready to play, so we schedule the play
 			// to be sent when the player is really ready to play
-            self.playScheduled = YES;
+			self.playScheduled = YES;
 		}
 	}
 	else if (context == AVPlayerItemPlaybackLikelyToKeepUpContext) {
@@ -926,19 +989,19 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 		}
 		
 		if ([self.stateMachine.currentState isEqual:self.stalledState]) {
-			[player play];
+			[self play];
 		}
 	}
-    else if (context == AVPlayerItemBufferEmptyContext) {
-        [self fireEvent:self.stallEvent userInfo:nil];
-    }
+	else if (context == AVPlayerItemBufferEmptyContext) {
+		[self fireEvent:self.stallEvent userInfo:nil];
+	}
 	else if (context == RTSMediaPlayerPictureInPicturePossibleContext || context == RTSMediaPlayerPictureInPictureActiveContext) {
 		[self postNotificationName:RTSMediaPlayerPictureInPictureStateChangeNotification userInfo:nil];
-        
-        // Always show overlays again when picture in picture is disabled
-        if (context == RTSMediaPlayerPictureInPictureActiveContext && !self.pictureInPictureController.isPictureInPictureActive) {
-            [self setOverlaysVisible:YES];
-        }
+		
+		// Always show overlays again when picture in picture is disabled
+		if (context == RTSMediaPlayerPictureInPictureActiveContext && !self.pictureInPictureController.isPictureInPictureActive) {
+			[self setOverlaysVisible:YES];
+		}
 	}
 	else {
 		[super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
@@ -954,8 +1017,10 @@ static const void * const AVPlayerItemBufferEmptyContext = &AVPlayerItemBufferEm
 
 - (void) playerItemFailedToPlayToEndTime:(NSNotification *)notification
 {
-	NSError *error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
-	[self fireEvent:self.resetEvent userInfo:ErrorUserInfo(error, @"AVPlayerItemFailedToPlayToEndTimeNotification did not provide an error.")];
+	NSDictionary *userInfo = ErrorUserInfo(RTSMediaPlayerErrorPlayback,
+										   RTSMediaPlayerLocalizedString(@"The media cannot be played", nil),
+										   notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey]);
+	[self fireEvent:self.resetEvent userInfo:userInfo];
 }
 
 - (void) playerItemTimeJumped:(NSNotification *)notification
@@ -1005,26 +1070,26 @@ static void LogProperties(id object)
 
 - (UIView *)view
 {
-    if (!_view) {
-        RTSMediaPlayerView *mediaPlayerView = [RTSMediaPlayerView new];
-        
-        mediaPlayerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        
-        UITapGestureRecognizer *doubleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
-        doubleTapGestureRecognizer.numberOfTapsRequired = 2;
-        [mediaPlayerView addGestureRecognizer:doubleTapGestureRecognizer];
-        
-        UITapGestureRecognizer *singleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSingleTap:)];
-        [singleTapGestureRecognizer requireGestureRecognizerToFail:doubleTapGestureRecognizer];
-        [mediaPlayerView addGestureRecognizer:singleTapGestureRecognizer];
-        
-        UIView *activityView = self.activityView ?: mediaPlayerView;
-        [activityView addGestureRecognizer:self.activityGestureRecognizer];
+	if (!_view) {
+		RTSMediaPlayerView *mediaPlayerView = [RTSMediaPlayerView new];
 		
-        _view = mediaPlayerView;
-    }
-    
-    return _view;
+		mediaPlayerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+		
+		UITapGestureRecognizer *doubleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
+		doubleTapGestureRecognizer.numberOfTapsRequired = 2;
+		[mediaPlayerView addGestureRecognizer:doubleTapGestureRecognizer];
+		
+		UITapGestureRecognizer *singleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSingleTap:)];
+		[singleTapGestureRecognizer requireGestureRecognizerToFail:doubleTapGestureRecognizer];
+		[mediaPlayerView addGestureRecognizer:singleTapGestureRecognizer];
+		
+		UIView *activityView = self.activityView ?: mediaPlayerView;
+		[activityView addGestureRecognizer:self.activityGestureRecognizer];
+		
+		_view = mediaPlayerView;
+	}
+	
+	return _view;
 }
 
 - (AVPictureInPictureController *)pictureInPictureController
@@ -1142,7 +1207,7 @@ static void LogProperties(id object)
 
 - (NSTimeInterval)overlayViewsHidingDelay
 {
-    return _overlayViewsHidingDelay;
+	return _overlayViewsHidingDelay;
 }
 
 - (void)setOverlayViewsHidingDelay:(NSTimeInterval)flag

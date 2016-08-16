@@ -107,7 +107,7 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 
 - (UIColor *) thumbTintColor
 {
-	return self.overriddenThumbTintColor;
+	return self.overriddenThumbTintColor ?: [UIColor whiteColor];
 }
 
 - (void) setThumbTintColor:(UIColor *)thumbTintColor
@@ -120,7 +120,7 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 
 - (UIColor *) minimumTrackTintColor
 {
-	return self.overriddenMinimumTrackTintColor;
+	return self.overriddenMinimumTrackTintColor ?: [UIColor whiteColor];
 }
 
 - (void) setMinimumTrackTintColor:(UIColor *)minimumTrackTintColor
@@ -130,7 +130,7 @@ static NSString *RTSTimeSliderFormatter(NSTimeInterval seconds)
 
 - (UIColor *) maximumTrackTintColor
 {
-	return self.overriddenMaximumTrackTintColor;
+	return self.overriddenMaximumTrackTintColor ?: [UIColor blackColor];
 }
 
 - (void) setMaximumTrackTintColor:(UIColor *)maximumTrackTintColor

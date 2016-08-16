@@ -67,7 +67,9 @@
 /**
  *  The player that provides the media content.
  *
- *  @discussion This can be used to implement advanced behaviors
+ *  @discussion This can be used to implement advanced behaviors. This property should not be used to alter player properties,
+ *              but merely for KVO registration or information extraction. Altering player properties in any way results in
+ *              undefined behavior
  */
 @property (readonly) AVPlayer *player;
 
@@ -241,11 +243,17 @@
 
 /**
  *  The media type (audio / video). See `RTSMediaType` for possible values
+ *
+ *  Warning: Is currently unreliable when Airplay playback has been started before the media is played
+ *           Related to https://openradar.appspot.com/27079167
  */
 @property (nonatomic, readonly) RTSMediaType mediaType;
 
 /**
  *  The stream type (live / DVR / VOD). See `RTSMediaStreamType` for possible values
+ *
+ *  Warning: Is currently unreliable when Airplay playback has been started before the media is played
+ *           Related to https://openradar.appspot.com/27079167
  */
 @property (nonatomic, readonly) RTSMediaStreamType streamType;
 
@@ -298,6 +306,18 @@
  *  @param observer The time observer to remove
  */
 - (void)removePeriodicTimeObserver:(id)observer;
+
+/**
+ *  -------------
+ *  @name Airplay
+ *  -------------
+ */
+
+/**
+ *  Refer to the corresponding `AVPlayer` properties for more information
+ */
+@property (nonatomic) BOOL allowsExternalPlayback;									// Default is YES
+@property (nonatomic) BOOL usesExternalPlaybackWhileExternalScreenIsActive;			// Default is NO
 
 @end
 

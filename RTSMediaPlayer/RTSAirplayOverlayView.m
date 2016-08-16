@@ -11,6 +11,8 @@
 @property (nonatomic, strong) MPVolumeView *volumeView;
 @end
 
+static const CGFloat RTSAirplayOverlayViewDefaultFillFactor = 0.6f;
+
 @implementation RTSAirplayOverlayView
 
 - (id)initWithFrame:(CGRect)frame
@@ -42,6 +44,7 @@
 	self.contentMode = UIViewContentModeRedraw;
 	self.userInteractionEnabled = NO;
 	self.hidden = YES;
+    self.fillFactor = RTSAirplayOverlayViewDefaultFillFactor;
 	
 	[[NSNotificationCenter defaultCenter] addObserver:self
 											 selector:@selector(wirelessRouteActiveDidChange:)
@@ -70,6 +73,21 @@
 	return RTSMediaPlayerLocalizedString(@"External device", nil);
 }
 
+- (void)setFillFactor:(CGFloat)fillFactor
+{
+    if (fillFactor <= 0.f) {
+        _fillFactor = RTSAirplayOverlayViewDefaultFillFactor;
+    }
+    else if (fillFactor > 1.f) {
+        _fillFactor = 1.f;
+    }
+    else {
+        _fillFactor = fillFactor;
+    }
+    
+    [self setNeedsDisplay];
+}
+
 
 #pragma mark - Notifications
 
@@ -83,7 +101,13 @@
 	BOOL hidden = YES;
 	for (AVAudioSessionPortDescription *outputPort in currentRoute.outputs) {
 		if ([outputPort.portType isEqualToString:AVAudioSessionPortAirPlay]) {
-			hidden = NO;
+            hidden = NO;
+            if (self.delegate && [self.delegate respondsToSelector:@selector(airplayOverlayViewCouldBeDisplayed:)]) {
+                if (![self.delegate airplayOverlayViewCouldBeDisplayed:self]) {
+                    hidden = YES;
+                }
+            }
+
 			break;
 		}
 	}
@@ -104,8 +128,8 @@
 	CGFloat shapeSeparatorDelta = 5.0f;
 	CGFloat quadCurveHeight = 20.0f;
 	
-	CGFloat maxWidth = CGRectGetWidth(self.bounds) - 2*lineWidth;
-	CGFloat maxHeight = CGRectGetHeight(self.bounds) - stringRectHeight - quadCurveHeight - shapeSeparatorDelta - 10.;
+	CGFloat maxWidth = CGRectGetWidth(self.bounds) * self.fillFactor - 2*lineWidth;
+	CGFloat maxHeight = CGRectGetHeight(self.bounds) * self.fillFactor - stringRectHeight - quadCurveHeight - shapeSeparatorDelta - 10.;
 	CGFloat aspectRatio = 16./10.0;
 	
 	if (maxWidth < maxHeight * aspectRatio) {
@@ -187,7 +211,7 @@
 	style.alignment = NSTextAlignmentCenter;
 	
 	return @{ NSFontAttributeName : [UIFont boldSystemFontOfSize:14.0f],
-			  NSForegroundColorAttributeName : [UIColor whiteColor],
+			  NSForegroundColorAttributeName : self.tintColor,
 			  NSParagraphStyleAttributeName: style };
 }
 
@@ -203,7 +227,7 @@
 	style.lineBreakMode = NSLineBreakByTruncatingTail;
 	
 	return @{ NSFontAttributeName : [UIFont systemFontOfSize:12.0f],
-			  NSForegroundColorAttributeName : [UIColor lightGrayColor],
+			  NSForegroundColorAttributeName : self.tintColor,
 			  NSParagraphStyleAttributeName: style };
 }
 
